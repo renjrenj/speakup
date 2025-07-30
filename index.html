@@ -30,8 +30,12 @@
 </head>
 <body>
     <div class="container">
-        <!-- Icon image - updated source and removed previous effects -->
-        <img src="icono.png" alt="Icono" class="mx-auto mb-6 max-w-full h-auto">
+        <!-- Icon image container to enforce 1x1 aspect ratio and responsiveness -->
+        <!-- The parent div controls the responsive width and maintains the aspect ratio -->
+        <div class="w-48 md:w-64 lg:w-80 mx-auto mb-6 aspect-square relative">
+            <!-- The image itself fills the square container and covers it, without shadows or rounded corners -->
+            <img src="icono.png" alt="Icono" class="absolute inset-0 w-full h-full object-cover">
+        </div>
 
         <!-- Main title - smaller font, not all caps -->
         <h1 class="text-3xl md:text-4xl lg:text-5xl font-bold mb-2">
