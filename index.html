@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Principality of Hixolram | Home</title>
+    <!-- Favicon link -->
+    <link rel="icon" href="icono.png" type="image/jpeg">
+    <link href="https://fonts.googleapis.com/css2?family=Belleza&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for the specific blue background */
+        body {
+            background-color: #003E87; /* Updated shade of blue */
+            overflow: hidden; /* Prevent scrolling */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ensure it takes full viewport height */
+            margin: 0;
+            font-family: 'Belleza', sans-serif; /* Apply Belleza font globally */
+            color: white; /* Default text color */
+        }
+
+        .container {
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Icon image container to enforce 1x1 aspect ratio and responsiveness -->
+        <div class="w-48 md:w-64 lg:w-80 mx-auto mb-6 aspect-square relative">
+            <img src="icono.jpg" alt="Icono" class="absolute inset-0 w-full h-full object-cover rounded-lg shadow-lg">
+        </div>
+
+        <!-- Main title - smaller font, not all caps -->
+        <h1 class="text-3xl md:text-4xl lg:text-5xl font-bold mb-2">
+            The Principality of Hixolram
+        </h1>
+
+        <!-- Motto - smaller font, still italics -->
+        <p class="text-base md:text-lg lg:text-xl italic">
+            Stella floret, sol floret, patria floret.
+        </p>
+    </div>
+
+    <script>
+        // JavaScript can be added here if needed for dynamic behavior.
+        // For this simple static page, no specific JS is required.
+    </script>
+</body>
+</html>
