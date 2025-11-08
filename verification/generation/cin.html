@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HIXOLRAM Secure CIN Generator & Validator</title>
+    
+    <!-- Load required fonts: Belleza for headers, Lato for body -->
+    <link href="https://fonts.googleapis.com/css2?family=Belleza&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* OFFICIAL HIXOLRAM COLOR SCHEME & FONTS */
+        :root {
+            --hix-primary: #004d99; /* Deep Blue - Secondary Accent */
+            --hix-secondary: #DAA520; /* Goldenrod */
+            --hix-accent: #800000; /* Rich Maroon/Dark Red */
+            --success-green: #198754;
+            --error-red: #dc3545;
+        }
+        body {
+            font-family: 'Lato', sans-serif;
+            margin: 0;
+            padding: 2rem;
+            background-color: #f5f5f5; /* Light grey/off-white background */
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            border-top: 5px solid var(--hix-accent); /* Maroon top border */
+        }
+        h1 {
+            font-family: 'Belleza', serif;
+            font-weight: 400; /* Belleza is usually thin */
+        }
+        h2 {
+            font-family: 'Belleza', serif;
+            font-size: 1.75rem;
+            font-weight: 400;
+            color: var(--hix-primary);
+            border-bottom: 3px double var(--hix-secondary);
+            padding-bottom: 0.5rem;
+            margin-top: 1.5rem;
+        }
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-weight: 700; /* Lato bold */
+            color: #333;
+        }
+        input[type="text"], select {
+            font-family: 'Lato', monospace; /* Keep monospace for CIN display clarity */
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus {
+            border-color: var(--hix-primary);
+            outline: none;
+        }
+        button {
+            padding: 0.75rem 1.5rem;
+            background-color: var(--hix-accent); /* Maroon button */
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Lato', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        button:hover {
+            background-color: #660000;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+        }
+        .result-box {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 10px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            text-align: center;
+            font-family: monospace; /* Ensure the CIN itself is monospace */
+            border: 2px dashed;
+        }
+        .generator-output {
+            background-color: #f7fbff;
+            color: var(--hix-primary);
+            border-color: var(--hix-primary);
+        }
+        .validator-status {
+            color: white;
+            font-size: 1.1rem;
+            border: none;
+        }
+        .valid { background-color: var(--success-green); }
+        .invalid { background-color: var(--error-red); }
+        .divider {
+            margin: 2rem 0;
+            border-top: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="text-center">
+            <h1 class="text-3xl font-bold mb-2" style="color: var(--hix-accent);">Hixolram Secure CIN Tool</h1>
+            <p class="text-gray-500 italic">Format: **HIXN - 6 Digits - 6 Digits - 4 Digits (CSUM)**</p>
+        </header>
+
+        <!-- CIN GENERATOR SECTION -->
+        <section id="generator">
+            <h2>CIN Generator</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="form-group">
+                    <label for="method">Method (N of HIXN):</label>
+                    <select id="method">
+                        <option value="A">A - Affirmation</option>
+                        <option value="N">N - Naturalization</option>
+                        <option value="I">I - Initial (Founding)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="year">Issuance Year (YYYY):</label>
+                    <input type="text" id="year" placeholder="e.g., 2025" maxlength="4" value="2025">
+                </div>
+                <div class="form-group">
+                    <label for="serial">Serial Number (SSSS):</label>
+                    <input type="text" id="serial" placeholder="e.g., 0001 (Next Sequential ID)" maxlength="4">
+                    <p class="text-xs text-gray-500 mt-1 italic">This is your internal, sequentially tracked ID.</p>
+                </div>
+            </div>
+            <button onclick="generateCIN()">Generate Secure CIN</button>
+            <div id="generatorResult" class="result-box generator-output"></div>
+        </section>
+
+        <div class="divider"></div>
+
+        <!-- CIN VALIDATOR SECTION -->
+        <section id="validator">
+            <h2>CIN Checksum Validator</h2>
+            <div class="form-group">
+                <label for="cinToCheck">Enter CIN to Verify:</label>
+                <input type="text" id="cinToCheck" placeholder="e.g., HIXA-834927-105562-4398" oninput="formatCIN(this)">
+            </div>
+            <button onclick="validateCIN()">Verify Checksum</button>
+            <div id="validatorResult" class="result-box validator-status"></div>
+            <p id="validatorDetail" class="text-sm mt-3 text-gray-500 italic text-center">
+                The checksum verifies the integrity of the hidden data.
+            </p>
+        </section>
+    </div>
+
+    <script>
+        // --- CORE ALGORITHM & HELPER FUNCTIONS ---
+
+        /** Generates a string of n random digits. */
+        function getRandomDigits(n) {
+            let digits = '';
+            for (let i = 0; i < n; i++) {
+                digits += Math.floor(Math.random() * 10);
+            }
+            return digits;
+        }
+
+        /** Converts a letter (A-Z) to a 2-digit number (A=10, ..., Z=35) or a digit to itself. */
+        function letterToDigit(char) {
+            const charCode = char.toUpperCase().charCodeAt(0);
+            if (charCode >= 48 && charCode <= 57) { // 0-9
+                return char;
+            }
+            if (charCode >= 65 && charCode <= 90) { // A-Z
+                return (charCode - 55).toString();
+            }
+            return '';
+        }
+
+        /** Calculates Modulo 97 on a large number string (ISO 7064 adaptation). */
+        function mod97(str) {
+            let remainder = 0;
+            // Process the large string piece by piece to prevent JS BigInt limits
+            for (let i = 0; i < str.length; i++) {
+                // remainder * 10 takes the previous remainder, shifts it left, and adds the new digit
+                remainder = (remainder * 10 + parseInt(str[i], 10)) % 97;
+            }
+            return remainder;
+        }
+
+        /**
+         * Encodes YYYY and SSSS data into two 6-digit blocks (D1 and D2) using random fillers.
+         * The pattern must be fixed and known for the reverse unscrambling.
+         */
+        function scrambleBlocks(year, serial) {
+            const Y = year.split(''); // Y1, Y2, Y3, Y4
+            const S = serial.split(''); // S1, S2, S3, S4
+            const R = getRandomDigits(4).split(''); // R1, R2, R3, R4
+
+            // Block D1 (Obfuscated Year): Y1 R1 Y2 Y3 R2 Y4
+            const blockD1 = Y[0] + R[0] + Y[1] + Y[2] + R[1] + Y[3];
+
+            // Block D2 (Obfuscated Serial): S1 S2 R3 S3 S4 R4
+            const blockD2 = S[0] + S[1] + R[2] + S[2] + S[3] + R[3];
+
+            return { blockD1, blockD2 };
+        }
+
+        /**
+         * Reverses the scramble to extract the original YYYY and SSSS data.
+         * Used internally by the validator.
+         */
+        function unscrambleBlocks(blockD1, blockD2) {
+            // Block D1 (Y1 R1 Y2 Y3 R2 Y4) -> Extract Year (0, 2, 3, 5)
+            const extractedYear = blockD1[0] + blockD1[2] + blockD1[3] + blockD1[5];
+
+            // Block D2 (S1 S2 R3 S3 S4 R4) -> Extract Serial (0, 1, 3, 4)
+            const extractedSerial = blockD2[0] + blockD2[1] + blockD2[3] + blockD2[4];
+
+            return { extractedYear, extractedSerial };
+        }
+
+
+        /** Calculates the 2-digit Mod 97 checksum for the given components. */
+        function calculateMod97(method, blockD1, blockD2) {
+            // 1. Convert HIXM prefix to numeric (e.g., HIXA -> 17183310)
+            const prefixNumeric = 'HIX' + method;
+            let numericPrefix = '';
+            for (let char of prefixNumeric) {
+                numericPrefix += letterToDigit(char);
+            }
+
+            // 2. Form the full data string (BlockD1 + BlockD2)
+            const dataNumeric = blockD1 + blockD2; // 12 digits
+
+            // 3. Rearrange: Move the prefix (8 digits) to the end and append '00' for checksum
+            // 12 data digits + 8 prefix digits + 2 zero digits = 22 digits total for Mod 97
+            const rearrangedString = dataNumeric + numericPrefix + '00';
+
+            // 4. Calculate Modulo 97
+            const remainder = mod97(rearrangedString);
+
+            // 5. Checksum is 98 - Remainder
+            const checksum = 98 - remainder;
+
+            return checksum.toString().padStart(2, '0');
+        }
+
+        // --- UI BINDINGS ---
+
+        // Generator
+        function generateCIN() {
+            const method = document.getElementById('method').value;
+            const year = document.getElementById('year').value;
+            const serial = document.getElementById('serial').value;
+            const resultDiv = document.getElementById('generatorResult');
+
+            if (year.length !== 4 || serial.length !== 4 || isNaN(parseInt(year)) || isNaN(parseInt(serial))) {
+                resultDiv.textContent = 'ERROR: Year and Serial must be 4-digit numbers.';
+                resultDiv.className = 'result-box validator-status invalid';
+                return;
+            }
+
+            // 1. Scramble data blocks (6D + 6D)
+            const { blockD1, blockD2 } = scrambleBlocks(year, serial);
+
+            // 2. Calculate the 2-digit checksum (C1C2)
+            const checksum2Digit = calculateMod97(method, blockD1, blockD2);
+
+            // 3. Pad checksum block with 2 random digits for obfuscation (R1R2)
+            const checksumBlock = checksum2Digit + getRandomDigits(2);
+
+            // 4. Assemble the final CIN
+            const fullCIN = `HIX${method}-${blockD1}-${blockD2}-${checksumBlock}`;
+
+            resultDiv.textContent = fullCIN;
+            resultDiv.className = 'result-box generator-output';
+        }
+
+        // Validator
+        function validateCIN() {
+            const inputCIN = document.getElementById('cinToCheck').value.toUpperCase().trim();
+            const resultDiv = document.getElementById('validatorResult');
+            const detailDiv = document.getElementById('validatorDetail');
+
+            const regex = /^HIX([A-Z])-(\d{6})-(\d{6})-(\d{4})$/;
+            const match = inputCIN.match(regex);
+
+            if (!match) {
+                resultDiv.textContent = 'INVALID: Format Error. Expected HIXM-6Digits-6Digits-4Digits.';
+                resultDiv.className = 'result-box validator-status invalid';
+                detailDiv.textContent = 'Please check the structure and try again.';
+                return;
+            }
+
+            const method = match[1];
+            const blockD1 = match[2];
+            const blockD2 = match[3];
+            const providedChecksumBlock = match[4];
+            const providedChecksum2Digit = providedChecksumBlock.substring(0, 2);
+
+            // 1. Calculate the expected 2-digit checksum based on the input blocks
+            const expectedChecksum2Digit = calculateMod97(method, blockD1, blockD2);
+            
+            // 2. Unscramble the data for internal tracking/verification display
+            const { extractedYear, extractedSerial } = unscrambleBlocks(blockD1, blockD2);
+
+            // 3. Compare the provided checksum (first two digits) with the expected checksum
+            if (providedChecksum2Digit === expectedChecksum2Digit) {
+                resultDiv.textContent = `CIN VALID: Checksum Verified.`;
+                resultDiv.className = 'result-box validator-status valid';
+                detailDiv.textContent = `Internal Data Verified: Year=${extractedYear}, Serial=${extractedSerial}.`;
+            } else {
+                resultDiv.textContent = `CIN INVALID: Checksum Mismatch.`;
+                resultDiv.className = 'result-box validator-status invalid';
+                detailDiv.textContent = `Verification Failed. Provided Checksum Start: ${providedChecksum2Digit}. Expected: ${expectedChecksum2Digit}.`;
+            }
+        }
+
+        // Auto-formatter for Validator Input
+        function formatCIN(input) {
+            let value = input.value.replace(/[^A-Z0-9]/g, '');
+            let formattedValue = '';
+
+            // HIXM (4)
+            if (value.length > 0) formattedValue += value.substring(0, 4);
+            // Block 1 (6D)
+            if (value.length > 4) formattedValue += '-' + value.substring(4, 10);
+            // Block 2 (6D)
+            if (value.length > 10) formattedValue += '-' + value.substring(10, 16);
+            // CSUM (4D)
+            if (value.length > 16) formattedValue += '-' + value.substring(16, 20);
+
+            input.value = formattedValue.toUpperCase();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('year').value = new Date().getFullYear();
+            // Default Serial for the demo
+            document.getElementById('serial').value = '0001'; 
+        });
+    </script>
+</body>
+</html>
