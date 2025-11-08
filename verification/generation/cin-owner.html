@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPRA Internal Citizen Registry</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Firebase/Firestore Modules -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // setLogLevel('debug'); // Uncomment to debug Firebase issues
+        
+        // --- GLOBAL VARIABLES (Mandatory Canvas Globals) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth, currentUserId;
+        let isAuthReady = false;
+        let currentRecords = [];
+        let isEditing = false;
+        let editingDocId = null;
+
+        // --- DOM Elements ---
+        const statusMessageEl = document.getElementById('status-message');
+        const userIdEl = document.getElementById('user-id-snippet');
+        const formTitleEl = document.getElementById('form-title');
+        const submitButtonEl = document.getElementById('submit-button');
+        const registryTableBodyEl = document.getElementById('registry-table-body');
+        const recordCountEl = document.getElementById('record-count');
+        const modalEl = document.getElementById('delete-modal');
+        const modalConfirmBtn = document.getElementById('modal-confirm-delete');
+        const modalCancelBtn = document.getElementById('modal-cancel-delete');
+        const modalTextEl = document.getElementById('modal-text');
+        const lookupResultEl = document.getElementById('lookup-result');
+
+        // --- Form Inputs ---
+        const cinInput = document.getElementById('cin-input');
+        const nameInput = document.getElementById('name-input');
+        const ssssInput = document.getElementById('ssss-input');
+        const lookupCinInput = document.getElementById('lookup-cin-input');
+        const registryForm = document.getElementById('registry-form');
+        const lookupForm = document.getElementById('lookup-form');
+
+
+        // --- UTILITY FUNCTIONS ---
+
+        const getCollectionPath = (uid) => `/artifacts/${appId}/users/${uid}/citizen_registry`;
+        
+        // Formats the CIN for display (e.g., HIXA1234567890123456 -> HIXA-123456-789012-3456)
+        const formatCinDisplay = (cin) => {
+            if (cin && cin.length === 20) {
+                return `${cin.substring(0, 4)}-${cin.substring(4, 10)}-${cin.substring(10, 16)}-${cin.substring(16)}`;
+            }
+            return cin;
+        };
+        
+        // Generates a 16-digit pseudo-random number for new CIN
+        const generateRandomNum = () => {
+            return Array(16).fill(0).map(() => Math.floor(Math.random() * 10)).join('');
+        };
+
+        const showStatus = (message, isError = false) => {
+            statusMessageEl.textContent = message;
+            statusMessageEl.className = 'p-3 rounded-lg text-center mb-6 font-bold text-sm transition-all duration-300 ' + (isError
+                ? 'bg-red-100 text-red-700 opacity-100'
+                : 'bg-green-100 text-green-700 opacity-100');
+            setTimeout(() => {
+                statusMessageEl.className = 'p-3 rounded-lg text-center mb-6 font-bold text-sm opacity-0';
+            }, 5000);
+        };
+
+        const resetForm = () => {
+            isEditing = false;
+            editingDocId = null;
+            registryForm.reset();
+            cinInput.value = '';
+            cinInput.setAttribute('disabled', 'true');
+            formTitleEl.textContent = 'New Citizen Entry';
+            submitButtonEl.textContent = 'Add New Record';
+            submitButtonEl.className = 'flex-1 action-button text-white p-3 rounded-lg font-bold shadow-md bg-blue-700 hover:bg-blue-800';
+            lookupResultEl.innerHTML = '<p class="text-center text-gray-500">Verification Result will display here.</p>';
+        };
+
+
+        // --- FIREBASE AND DATA FUNCTIONS ---
+
+        const initializeFirebase = async () => {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        userIdEl.textContent = currentUserId.substring(0, 8);
+                        isAuthReady = true;
+                        loadRecords(); // Start listening for data
+                        resetForm(); // Reset form and prepare for first use
+                    } else {
+                        // Sign in if not authenticated
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            // Use anonymous sign-in as fallback
+                            await signInAnonymously(auth);
+                        }
+                    }
+                });
+
+            } catch (error) {
+                showStatus(`Firebase Init Error: ${error.message}`, true);
+            }
+        };
+
+        const loadRecords = () => {
+            if (!isAuthReady) return;
+
+            const colRef = collection(db, getCollectionPath(currentUserId));
+            const q = query(colRef);
+
+            onSnapshot(q, (snapshot) => {
+                currentRecords = [];
+                snapshot.forEach((doc) => {
+                    currentRecords.push({ id: doc.id, ...doc.data() });
+                });
+                renderTable(currentRecords);
+                recordCountEl.textContent = currentRecords.length;
+            }, (error) => {
+                showStatus(`Real-time Listener Error: ${error.message}`, true);
+            });
+        };
+
+        const renderTable = (records) => {
+            registryTableBodyEl.innerHTML = '';
+            
+            if (records.length === 0) {
+                 registryTableBodyEl.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="px-3 py-6 text-center text-gray-400 italic">
+                            No citizen records found. Add the first entry!
+                        </td>
+                    </tr>
+                 `;
+                 return;
+            }
+
+            records.sort((a, b) => a.name.localeCompare(b.name)).forEach(record => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-blue-50';
+                
+                row.innerHTML = `
+                    <td class="px-3 py-3 font-semibold text-blue-800">${formatCinDisplay(record.cin)}</td>
+                    <td class="px-3 py-3">${record.name}</td>
+                    <td class="px-3 py-3 font-mono text-red-800">${record.ssss}</td>
+                    <td class="px-3 py-3 text-right space-x-2">
+                        <button data-id="${record.id}" data-cin="${record.cin}" data-name="${record.name}" data-ssss="${record.ssss}" 
+                                class="edit-btn text-white p-2 rounded-md bg-yellow-600 hover:bg-yellow-700 transition duration-150 shadow-md text-xs">
+                            Edit
+                        </button>
+                        <button data-id="${record.id}" data-cin="${record.cin}" 
+                                class="delete-btn text-white p-2 rounded-md bg-red-700 hover:bg-red-800 transition duration-150 shadow-md text-xs">
+                            Delete
+                        </button>
+                    </td>
+                `;
+                registryTableBodyEl.appendChild(row);
+            });
+
+            // Re-attach event listeners after rendering
+            document.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', handleEditClick));
+            document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', handleDeleteModal));
+        };
+
+        // --- EVENT HANDLERS ---
+
+        const handleFormSubmit = async (e) => {
+            e.preventDefault();
+            if (!currentUserId) return showStatus("Authentication not ready. Please wait.", true);
+
+            const name = nameInput.value.trim();
+            const ssss = ssssInput.value.trim();
+            let cin = cinInput.value.trim().replace(/-/g, ''); // Remove hyphens for storage
+
+            if (!name || !ssss) {
+                return showStatus("Owner Name and SSSS are mandatory.", true);
+            }
+
+            try {
+                const colRef = collection(db, getCollectionPath(currentUserId));
+                
+                if (isEditing && editingDocId) {
+                    // --- UPDATE LOGIC ---
+                    const docRef = doc(db, colRef.path, editingDocId);
+                    await updateDoc(docRef, { name, ssss });
+                    showStatus(`Record for CIN ${formatCinDisplay(cin)} updated successfully.`);
+                } else {
+                    // --- ADD LOGIC ---
+                    if (!cin) {
+                        // Generate a new CIN with prefix HIXM
+                        cin = 'HIXM' + generateRandomNum();
+                    }
+                    // Check if CIN already exists before adding (optional check)
+                    const existingRecord = currentRecords.find(r => r.cin === cin);
+                    if (existingRecord) {
+                        return showStatus(`CIN ${formatCinDisplay(cin)} already exists. Use the Edit function.`, true);
+                    }
+                    
+                    await addDoc(colRef, { cin, name, ssss, created: new Date() });
+                    showStatus(`New record for CIN ${formatCinDisplay(cin)} added successfully.`);
+                }
+                resetForm();
+            } catch (error) {
+                showStatus(`Data Operation Failed: ${error.message}`, true);
+            }
+        };
+        
+        const handleEditClick = (e) => {
+            const { id, cin, name, ssss } = e.target.dataset;
+            
+            isEditing = true;
+            editingDocId = id;
+            
+            // Populate form
+            cinInput.value = formatCinDisplay(cin);
+            cinInput.removeAttribute('disabled'); // Allow user to see the CIN they are editing
+            nameInput.value = name;
+            ssssInput.value = ssss;
+            
+            formTitleEl.textContent = `Update Citizen Record: ${formatCinDisplay(cin)}`;
+            submitButtonEl.textContent = 'Save Changes';
+            submitButtonEl.className = 'flex-1 action-button text-white p-3 rounded-lg font-bold shadow-md bg-yellow-600 hover:bg-yellow-700';
+            
+            // Scroll to the form
+            cinInput.focus();
+        };
+
+        const handleDeleteModal = (e) => {
+            const { id, cin } = e.target.dataset;
+            
+            modalEl.classList.remove('hidden');
+            modalTextEl.textContent = `Are you sure you want to permanently delete the record for CIN ${formatCinDisplay(cin)}? This action cannot be undone.`;
+            
+            // Set temporary handler for confirmation
+            modalConfirmBtn.onclick = () => handleDelete(id, cin);
+        };
+        
+        const handleDelete = async (docId, cin) => {
+            modalEl.classList.add('hidden');
+            if (!currentUserId) return showStatus("Authentication not ready. Please wait.", true);
+            
+            try {
+                const docRef = doc(db, getCollectionPath(currentUserId), docId);
+                await deleteDoc(docRef);
+                showStatus(`Record for CIN ${formatCinDisplay(cin)} has been deleted.`);
+                resetForm();
+            } catch (error) {
+                showStatus(`Deletion Failed: ${error.message}`, true);
+            }
+        };
+
+        const handleLookup = async (e) => {
+            e.preventDefault();
+            if (!currentUserId) return showStatus("Authentication not ready. Please wait.", true);
+            
+            const searchCin = lookupCinInput.value.trim().replace(/-/g, '');
+            if (searchCin.length === 0) {
+                return showStatus("Please enter a CIN for lookup.", true);
+            }
+            
+            // Find the record in the current snapshot (avoids extra Firestore read)
+            const record = currentRecords.find(r => r.cin === searchCin);
+
+            if (record) {
+                lookupResultEl.innerHTML = `
+                    <p class="text-xl font-bold text-green-700 mb-1">Owner Found:</p>
+                    <p class="text-2xl font-extrabold text-blue-800">${record.name}</p>
+                    <p class="text-lg font-mono text-red-700 mt-2">SSSS: ${record.ssss}</p>
+                `;
+            } else {
+                 // Fallback to fetch from Firestore if necessary (though onSnapshot should have it)
+                lookupResultEl.innerHTML = `
+                    <p class="text-lg font-bold text-red-600">Verification Failed:</p>
+                    <p class="text-md text-red-500">CIN ${formatCinDisplay(searchCin)} not found in the registry.</p>
+                `;
+            }
+        };
+
+
+        // --- INITIALIZATION ---
+        window.onload = () => {
+            initializeFirebase();
+            
+            // Attach main listeners
+            registryForm.addEventListener('submit', handleFormSubmit);
+            lookupForm.addEventListener('submit', handleLookup);
+            
+            document.getElementById('clear-button').addEventListener('click', resetForm);
+            
+            // Modal close listener
+            modalCancelBtn.addEventListener('click', () => modalEl.classList.add('hidden'));
+        };
+    </script>
+    <style>
+        /* Custom styles for branding and aesthetics */
+        @import url('https://fonts.googleapis.com/css2?family=Belleza&family=Lato:wght@400;700&display=swap');
+        h1, h2, h3 { font-family: 'Belleza', serif; font-weight: 400; }
+        * { font-family: 'Lato', sans-serif; }
+        
+        /* Define the color palette */
+        :root {
+            --color-primary: #800000; /* Maroon */
+            --color-secondary: #004d99; /* Deep Blue */
+            --color-accent: #DAA520; /* Gold */
+        }
+
+        .cin-table-header { color: var(--color-secondary); }
+        .data-card { border-top: 4px solid var(--color-primary); }
+        .action-button { background-color: var(--color-secondary); }
+        
+        .edit-btn { background-color: var(--color-accent); }
+        .edit-btn:hover { background-color: #C5931D; }
+        
+        .delete-btn { background-color: var(--color-primary); }
+        .delete-btn:hover { background-color: #6A0000; }
+
+        /* Ensure smooth scroll for long lists */
+        .max-h-\[600px\] { max-height: 600px; }
+    </style>
+</head>
+
+<body class="p-4 sm:p-8 min-h-screen bg-gray-50">
+    
+    <div class="max-w-6xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl sm:text-5xl mb-2" style="color: var(--color-primary);">
+                CPRA Internal Citizen Registry
+            </h1>
+            <p class="text-md text-gray-600">
+                Secure Data Management for The Principality of Hixolram (User ID: <span id="user-id-snippet" class="font-mono text-xs p-1 bg-gray-200 rounded">Loading...</span>...)
+            </p>
+        </header>
+
+        <!-- Status Message Banner -->
+        <div id="status-message" class="p-3 rounded-lg text-center mb-6 font-bold text-sm opacity-0 transition-all duration-300 bg-green-100 text-green-700">
+            <!-- Dynamic status messages appear here -->
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- LEFT COLUMN: Data Entry and Lookup -->
+            <div class="lg:col-span-1 space-y-8">
+                
+                <!-- 1. CIN/Owner Entry Form Card -->
+                <div class="p-6 rounded-xl shadow-lg bg-white data-card">
+                    <h2 id="form-title" class="text-2xl mb-4" style="color: var(--color-secondary);">
+                        New Citizen Entry
+                    </h2>
+                    <form id="registry-form" class="space-y-4">
+                        <label class="block font-bold text-sm text-gray-700">
+                            CIN (e.g., HIXM-XXXXXX-XXXXXX-XXXX)
+                            <input type="text" id="cin-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg font-mono bg-gray-100" placeholder="Automatically generated or displayed when editing" disabled>
+                            <p class="text-xs text-gray-500 mt-1">CIN is generated automatically unless editing an existing record.</p>
+                        </label>
+                        
+                        <label class="block font-bold text-sm text-gray-700">
+                            Owner Full Name
+                            <input type="text" id="name-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg" placeholder="Johnathan P. Smith" required>
+                        </label>
+                        
+                        <!-- SSSS INPUT FIELD (New Requirement) -->
+                        <label class="block font-bold text-sm text-gray-700">
+                            SSSS (Secret Security Sequence/District Code)
+                            <input type="text" id="ssss-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg font-mono" placeholder="e.g., District Alpha or 01A" required>
+                            <p class="text-xs text-gray-500 mt-1">This field is mandatory for district assignment/security checks.</p>
+                        </label>
+                        <!-- END SSSS INPUT FIELD -->
+                        
+                        <div class="flex space-x-3 pt-2">
+                            <button type="submit" id="submit-button" class="flex-1 text-white p-3 rounded-lg font-bold shadow-md bg-blue-700 hover:bg-blue-800 transition duration-150">
+                                Add New Record
+                            </button>
+                            <button type="button" id="clear-button" class="w-1/4 text-white p-3 rounded-lg font-bold shadow-md bg-gray-500 hover:bg-gray-600 transition duration-150">
+                                Clear
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- 2. CIN Lookup/Verification Card -->
+                <div class="p-6 rounded-xl shadow-lg bg-white data-card">
+                    <h2 class="text-2xl mb-4" style="color: var(--color-secondary);">
+                        Owner Verification (Lookup)
+                    </h2>
+                    <form id="lookup-form" class="space-y-4">
+                        <label class="block font-bold text-sm text-gray-700">
+                            Search CIN (HIXM...)
+                            <input type="text" id="lookup-cin-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg font-mono" placeholder="Enter full CIN to verify owner" required>
+                        </label>
+                        <button type="submit" class="w-full action-button text-white p-3 rounded-lg font-bold shadow-md hover:bg-blue-800 transition duration-150">
+                            Verify Owner
+                        </button>
+                    </form>
+                    
+                    <!-- Lookup Result Box -->
+                    <div id="lookup-result" class="mt-5 p-4 rounded-lg border-2 border-dashed" style="border-color: var(--color-accent);">
+                        <p class="text-center text-gray-500">Verification Result will display here.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Real-Time Registry List -->
+            <div class="lg:col-span-2">
+                <div class="p-6 rounded-xl shadow-lg bg-white data-card">
+                    <h2 class="text-2xl mb-4" style="color: var(--color-secondary);">
+                        Full Citizen Registry (<span id="record-count">0</span> Entries)
+                    </h2>
+                    <div class="max-h-[600px] overflow-y-auto border rounded-lg shadow-inner">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="sticky top-0 bg-gray-100 shadow-sm">
+                                <tr>
+                                    <th class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider cin-table-header">CIN</th>
+                                    <th class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider cin-table-header">Owner Name</th>
+                                    <th class="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider cin-table-header">SSSS (Secret Seq.)</th>
+                                    <th class="px-3 py-3 text-right text-xs font-bold uppercase tracking-wider cin-table-header">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="registry-table-body" class="divide-y divide-gray-100">
+                                <!-- Data will be inserted here by JavaScript's renderTable function -->
+                                <tr>
+                                    <td colspan="4" class="px-3 py-6 text-center text-gray-400 italic">
+                                        Loading records...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Custom Confirmation Modal (Hidden by default) -->
+    <div id="delete-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-xl shadow-2xl max-w-md w-full border-t-4 border-red-600">
+            <h3 class="text-2xl font-bold text-red-700 mb-4">Confirm Deletion</h3>
+            <p id="modal-text" class="text-lg text-gray-700 mb-8">Are you sure you want to permanently delete this record? This action cannot be undone.</p>
+            <div class="flex justify-end space-x-3">
+                <button id="modal-cancel-delete" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button id="modal-confirm-delete" class="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 transition duration-150 shadow-md">
+                    Confirm Delete
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
