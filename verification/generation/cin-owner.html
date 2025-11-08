@@ -6,17 +6,17 @@
     <title>CPRA Internal Citizen Registry</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Links (safer than CSS @import) -->
+    <link href="https://fonts.googleapis.com/css2?family=Belleza&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+
     <!-- Load Firebase/Firestore Modules -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // setLogLevel('debug'); // Uncomment for console debugging if initialization fails
+        // import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- GLOBAL VARIABLES (Mandatory Canvas Globals) ---
-        // Ensuring these global variables are safely accessed
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -52,10 +52,8 @@
 
         // --- UTILITY FUNCTIONS ---
 
-        // CRITICAL: Ensures the data path is correct for security rules
         const getCollectionPath = (uid) => `/artifacts/${appId}/users/${uid}/citizen_registry`;
         
-        // Formats the CIN for display
         const formatCinDisplay = (cin) => {
             if (cin && cin.length === 20) {
                 // Display in the official HIXM-XXXXXX-XXXXXX-XXXX format
@@ -74,7 +72,6 @@
             statusMessageEl.classList.remove('hidden');
 
             setTimeout(() => {
-                // Clear message but keep the element structure
                 statusMessageEl.classList.add('hidden');
             }, 8000);
         };
@@ -101,7 +98,7 @@
 
         const initializeFirebase = async () => {
             if (Object.keys(firebaseConfig).length === 0) {
-                appContainerEl.classList.add('hidden'); // Hide the UI if config is missing
+                // The app container is already visible, just show the error in the status bar
                 return showStatus("CRITICAL ERROR: Firebase configuration is missing. Cannot run registry.", true);
             }
 
@@ -112,14 +109,13 @@
                 
                 // Show a loading state until auth resolves
                 registryTableBodyEl.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500 italic">Authenticating and connecting to database...</td></tr>`;
-
+                
                 // CRITICAL: Use onAuthStateChanged to manage the entire authentication flow
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         currentUserId = user.uid;
                         userIdEl.textContent = currentUserId.substring(0, 8);
                         isAuthReady = true;
-                        appContainerEl.classList.remove('hidden'); // Show UI now that auth is done
                         loadRecords(); // Start listening for data
                         resetForm(); 
                     } else {
@@ -141,8 +137,6 @@
 
         const loadRecords = () => {
             if (!isAuthReady) {
-                // Should never be called if !isAuthReady, but safety check remains
-                registryTableBodyEl.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500 italic">Waiting for secure authentication...</td></tr>`;
                 return;
             }
 
@@ -226,15 +220,10 @@
                 const colRef = collection(db, getCollectionPath(currentUserId));
                 
                 if (isEditing && editingDocId) {
-                    // --- UPDATE LOGIC ---
-                    
                     const docRef = doc(db, colRef.path, editingDocId);
-                    // Save the cleaned CIN, Name, and SSSS
                     await updateDoc(docRef, { name, ssss, cin }); 
                     showStatus(`Record for CIN ${formatCinDisplay(cin)} updated successfully.`);
                 } else {
-                    // --- ADD LOGIC ---
-                    
                     // Check for duplicates before adding
                     const existingRecord = currentRecords.find(r => r.cin === cin);
                     if (existingRecord) {
@@ -343,13 +332,6 @@
         };
     </script>
     <style>
-        /* CRITICAL FIX: The @import rule for fonts sometimes fails and can break the whole CSS block. 
-           Switching to standard <link> tags or ensuring it's the very first rule helps. 
-           I will move the font import to a standard link for safety. */
-    </style>
-    <!-- Font Links (safer than CSS @import) -->
-    <link href="https://fonts.googleapis.com/css2?family=Belleza&family=Lato:wght@400;700&display=swap" rel="stylesheet">
-    <style>
         /* Custom styles for branding and aesthetics */
         h1, h2, h3 { font-family: 'Belleza', serif; font-weight: 400; }
         * { font-family: 'Lato', sans-serif; }
@@ -377,20 +359,20 @@
 </head>
 
 <body class="p-4 sm:p-8 min-h-screen bg-gray-50">
-    <!-- Main Application Container (Hidden until Auth is Ready) -->
-    <div id="app-container" class="max-w-6xl mx-auto hidden">
+    <!-- Main Application Container (CRITICAL FIX: Removed 'hidden' class so the UI skeleton is visible even if JS fails) -->
+    <div id="app-container" class="max-w-6xl mx-auto">
         <header class="text-center mb-8">
             <h1 class="text-4xl sm:text-5xl mb-2" style="color: var(--color-primary);">
                 CPRA Internal Citizen Registry
             </h1>
             <p class="text-md text-gray-600">
-                Secure Data Management for The Principality of Hixolram (User ID: <span id="user-id-snippet" class="font-mono text-xs p-1 bg-gray-200 rounded">Loading...</span>...)
+                Secure Data Management for The Principality of Hixolram (User ID: <span id="user-id-snippet" class="font-mono text-xs p-1 bg-gray-200 rounded">Connecting...</span>)
             </p>
         </header>
 
         <!-- Status Message Banner -->
-        <div id="status-message" class="hidden p-3 rounded-lg text-center mb-6 font-bold text-sm">
-            <!-- Dynamic status messages appear here -->
+        <div id="status-message" class="p-3 rounded-lg text-center mb-6 font-bold text-sm bg-blue-100 text-blue-700">
+            Connecting to Registry Database. Please wait for authentication...
         </div>
         
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -405,9 +387,8 @@
                     <form id="registry-form" class="space-y-4">
                         <label class="block font-bold text-sm text-gray-700">
                             CIN (e.g., HIXM-XXXXXX-XXXXXX-XXXX) <span class="text-red-600">*MANDATORY</span>
-                            <!-- CIN is ENABLED and required -->
                             <input type="text" id="cin-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg font-mono" placeholder="Enter the 20-digit HIXM CIN here" required>
-                            <p class="text-xs text-gray-500 mt-1">Please manually enter the CIN generated by the dedicated tool (must be 20 characters, starting with HIXM).</p>
+                            <p class="text-xs text-gray-500 mt-1">Please manually enter the **20-character CIN** (must start with HIXM).</p>
                         </label>
                         
                         <label class="block font-bold text-sm text-gray-700">
