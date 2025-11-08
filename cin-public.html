@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIN Verification Portal - The Principality of Hixolram</title>
+    
+    <!-- Load required fonts: Belleza for headers, Lato for body -->
+    <link href="https://fonts.googleapis.com/css2?family=Belleza&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* OFFICIAL HIXOLRAM COLOR SCHEME & FONTS */
+        :root {
+            --hix-primary: #004d99; /* Deep Blue - Text/Headers */
+            --hix-secondary: #DAA520; /* Goldenrod - Accent/Rule */
+            --hix-accent: #800000; /* Rich Maroon/Dark Red - Key Highlight */
+            --success-green: #198754;
+            --error-red: #dc3545;
+        }
+        body {
+            font-family: 'Lato', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f4f8; /* Very light subtle background */
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding-top: 5vh;
+        }
+        .container {
+            width: 95%;
+            max-width: 768px;
+            background-color: #fff;
+            padding: 35px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            border-top: 8px solid var(--hix-accent);
+        }
+        h1, h2, h3 {
+            font-family: 'Belleza', serif;
+            font-weight: 400;
+            color: var(--hix-primary);
+        }
+        h1 {
+            font-size: 2.5rem;
+            color: var(--hix-accent);
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+        h2 {
+            font-size: 1.6rem;
+            margin-top: 1.5rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 2px solid var(--hix-secondary);
+        }
+        p, label, select {
+            font-family: 'Lato', sans-serif;
+            color: #333;
+        }
+        input[type="text"] {
+            font-family: monospace;
+            font-weight: 700;
+            width: 100%;
+            padding: 0.9rem;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1.1rem;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        input[type="text"]:focus {
+            border-color: var(--hix-primary);
+            box-shadow: 0 0 0 3px rgba(0, 77, 153, 0.2);
+            outline: none;
+        }
+        button {
+            padding: 0.8rem 2rem;
+            background-color: var(--hix-primary); 
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: 700;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        button:hover {
+            background-color: #003873; /* Darker blue */
+            transform: translateY(-1px);
+        }
+        .message-box {
+            margin-top: 1.5rem;
+            padding: 1.25rem;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            text-align: center;
+            border: 2px solid;
+            transition: all 0.5s ease-in-out;
+            opacity: 0; /* Starts hidden */
+        }
+        .message-box.show {
+            opacity: 1; /* Fade in */
+        }
+        .valid { background-color: #e6f7ed; color: var(--success-green); border-color: var(--success-green); }
+        .invalid { background-color: #f8e8e8; color: var(--error-red); border-color: var(--error-red); }
+        .info { background-color: #f0f7ff; color: var(--hix-primary); border-color: var(--hix-primary); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl">Citizenship ID Verification Portal</h1>
+            <p class="text-lg text-gray-500 italic">The Principality of Hixolram - CPRA</p>
+        </header>
+
+        <!-- VERIFICATION SECTION -->
+        <section id="verification">
+            <h2 class="mb-5">Verify Your Citizen ID Number (CIN)</h2>
+            <p class="text-sm mb-4">Please enter your 20-character CIN below. This portal checks the cryptographic **Checksum** to confirm the number's authenticity and integrity.</p>
+            
+            <div class="form-group mb-6">
+                <label for="cinToCheck" class="text-lg mb-2">Citizen ID Number (CIN):</label>
+                <input type="text" id="cinToCheck" placeholder="HIXA-XXXXXX-XXXXXX-XXXX" maxlength="24" oninput="formatCIN(this)">
+            </div>
+
+            <div class="flex justify-center">
+                <button onclick="validateCIN()">Confirm Authenticity</button>
+            </div>
+
+            <!-- RESULT MESSAGE BOX -->
+            <div id="validatorResult" class="message-box info">
+                Enter your CIN above to verify its status.
+            </div>
+            
+        </section>
+
+        <hr class="my-8 border-gray-200">
+
+        <!-- CONTACT & INFO SECTION -->
+        <section id="contact-info" class="text-center">
+            <h3>Contact the CPRA</h3>
+            <p class="mt-3">For assistance with new applications or CIN issues, please contact the Citizenship and Population Registry Agency:</p>
+            <div class="mt-4 p-4 border rounded-lg bg-gray-50 inline-block text-left" style="border-color: var(--hix-primary);">
+                <p class="font-bold" style="color: var(--hix-primary);">E-mail Inquiries:</p>
+                <p class="text-sm">hixolram@outlook.com</p>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // --- CORE ALGORITHM FUNCTIONS (Copied from the previous generator tool) ---
+
+        /** Converts a letter (A-Z) to a 2-digit number (A=10, ..., Z=35) or a digit to itself. */
+        function letterToDigit(char) {
+            const charCode = char.toUpperCase().charCodeAt(0);
+            if (charCode >= 48 && charCode <= 57) { // 0-9
+                return char;
+            }
+            if (charCode >= 65 && charCode <= 90) { // A-Z
+                return (charCode - 55).toString();
+            }
+            return '';
+        }
+
+        /** Calculates Modulo 97 on a large number string (ISO 7064 adaptation). */
+        function mod97(str) {
+            let remainder = 0;
+            // Process the large string piece by piece to prevent JS BigInt limits
+            for (let i = 0; i < str.length; i++) {
+                remainder = (remainder * 10 + parseInt(str[i], 10)) % 97;
+            }
+            return remainder;
+        }
+
+        /** Calculates the 2-digit Mod 97 checksum for the given components. */
+        function calculateMod97(method, blockD1, blockD2) {
+            // 1. Convert HIXM prefix to numeric (e.g., HIXA -> 17183310)
+            const prefixNumeric = 'HIX' + method;
+            let numericPrefix = '';
+            for (let char of prefixNumeric) {
+                numericPrefix += letterToDigit(char);
+            }
+
+            // 2. Form the full data string (BlockD1 + BlockD2)
+            const dataNumeric = blockD1 + blockD2; // 12 digits
+
+            // 3. Rearrange: Move the prefix (8 digits) to the end and append '00' for checksum
+            const rearrangedString = dataNumeric + numericPrefix + '00';
+
+            // 4. Calculate Modulo 97
+            const remainder = mod97(rearrangedString);
+
+            // 5. Checksum is 98 - Remainder
+            const checksum = 98 - remainder;
+
+            return checksum.toString().padStart(2, '0');
+        }
+
+        // --- UI BINDINGS ---
+
+        // Validator
+        function validateCIN() {
+            const inputCIN = document.getElementById('cinToCheck').value.toUpperCase().trim();
+            const resultDiv = document.getElementById('validatorResult');
+            
+            // Remove the 'show' class to reset the fade effect
+            resultDiv.classList.remove('show');
+
+            const regex = /^HIX([A-Z])-(\d{6})-(\d{6})-(\d{4})$/;
+            const match = inputCIN.match(regex);
+
+            if (!match) {
+                resultDiv.textContent = 'INVALID: Format Error. CIN should be HIXN-6Digits-6Digits-4Digits.';
+                resultDiv.className = 'message-box invalid';
+                resultDiv.classList.add('show');
+                return;
+            }
+
+            const method = match[1];
+            const blockD1 = match[2];
+            const blockD2 = match[3];
+            const providedChecksumBlock = match[4];
+            const providedChecksum2Digit = providedChecksumBlock.substring(0, 2);
+
+            // 1. Calculate the expected 2-digit checksum based on the input blocks
+            const expectedChecksum2Digit = calculateMod97(method, blockD1, blockD2);
+            
+            // 2. Compare the provided checksum (first two digits) with the expected checksum
+            if (providedChecksum2Digit === expectedChecksum2Digit) {
+                resultDiv.textContent = `AUTHENTICATED. This Citizen ID Number's checksum has been verified.`;
+                resultDiv.className = 'message-box valid';
+            } else {
+                resultDiv.textContent = `UNVERIFIED. Checksum Mismatch. This number may be entered incorrectly or be fraudulent.`;
+                resultDiv.className = 'message-box invalid';
+            }
+
+            // Show the result with a slight delay for transition effect
+            setTimeout(() => resultDiv.classList.add('show'), 10);
+        }
+
+        // Auto-formatter for Validator Input (UX improvement)
+        function formatCIN(input) {
+            let value = input.value.replace(/[^A-Z0-9]/g, '');
+            let formattedValue = '';
+
+            // HIXM (4)
+            if (value.length > 0) formattedValue += value.substring(0, 4);
+            // Block 1 (6D)
+            if (value.length > 4) formattedValue += '-' + value.substring(4, 10);
+            // Block 2 (6D)
+            if (value.length > 10) formattedValue += '-' + value.substring(10, 16);
+            // CSUM (4D)
+            if (value.length > 16) formattedValue += '-' + value.substring(16, 20);
+
+            input.value = formattedValue.toUpperCase();
+        }
+    </script>
+</body>
+</html>
