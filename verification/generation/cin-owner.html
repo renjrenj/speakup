@@ -10,10 +10,10 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // setLogLevel('debug'); // Uncomment to debug Firebase issues
+        // setLogLevel('debug'); // Use this to debug Firebase issues in the console
         
         // --- GLOBAL VARIABLES (Mandatory Canvas Globals) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -27,6 +27,7 @@
         let editingDocId = null;
 
         // --- DOM Elements ---
+        const appContainerEl = document.getElementById('app-container');
         const statusMessageEl = document.getElementById('status-message');
         const userIdEl = document.getElementById('user-id-snippet');
         const formTitleEl = document.getElementById('form-title');
@@ -50,29 +51,34 @@
 
         // --- UTILITY FUNCTIONS ---
 
+        // CRITICAL: Ensures the data path is correct for security rules
         const getCollectionPath = (uid) => `/artifacts/${appId}/users/${uid}/citizen_registry`;
         
-        // Formats the CIN for display (e.g., HIXA1234567890123456 -> HIXA-123456-789012-3456)
+        // Formats the CIN for display
         const formatCinDisplay = (cin) => {
             if (cin && cin.length === 20) {
+                // Ensure the CIN is always displayed in the official HIXM-XXXXXX-XXXXXX-XXXX format
                 return `${cin.substring(0, 4)}-${cin.substring(4, 10)}-${cin.substring(10, 16)}-${cin.substring(16)}`;
             }
             return cin;
         };
         
-        // Generates a 16-digit pseudo-random number for new CIN
-        const generateRandomNum = () => {
-            return Array(16).fill(0).map(() => Math.floor(Math.random() * 10)).join('');
-        };
+        // This function is now retired, as CIN is always manually input
+        // const generateRandomNum = () => { /* ... */ };
 
         const showStatus = (message, isError = false) => {
             statusMessageEl.textContent = message;
             statusMessageEl.className = 'p-3 rounded-lg text-center mb-6 font-bold text-sm transition-all duration-300 ' + (isError
                 ? 'bg-red-100 text-red-700 opacity-100'
                 : 'bg-green-100 text-green-700 opacity-100');
+            
+            // Ensure the element is visible
+            statusMessageEl.classList.remove('hidden');
+
             setTimeout(() => {
-                statusMessageEl.className = 'p-3 rounded-lg text-center mb-6 font-bold text-sm opacity-0';
-            }, 5000);
+                // Clear message but keep the element structure
+                statusMessageEl.classList.add('hidden');
+            }, 8000);
         };
 
         const resetForm = () => {
@@ -80,7 +86,12 @@
             editingDocId = null;
             registryForm.reset();
             cinInput.value = '';
-            cinInput.setAttribute('disabled', 'true');
+            
+            // CRITICAL FIX: CIN must be enabled and mandatory for new entry
+            cinInput.removeAttribute('disabled'); 
+            cinInput.setAttribute('placeholder', 'Enter the 20-digit HIXM CIN here'); 
+            cinInput.setAttribute('required', 'true');
+
             formTitleEl.textContent = 'New Citizen Entry';
             submitButtonEl.textContent = 'Add New Record';
             submitButtonEl.className = 'flex-1 action-button text-white p-3 rounded-lg font-bold shadow-md bg-blue-700 hover:bg-blue-800';
@@ -91,36 +102,48 @@
         // --- FIREBASE AND DATA FUNCTIONS ---
 
         const initializeFirebase = async () => {
+            if (Object.keys(firebaseConfig).length === 0) {
+                appContainerEl.classList.add('hidden'); // Hide the UI if config is missing
+                return showStatus("CRITICAL ERROR: Firebase configuration is missing. Cannot run registry.", true);
+            }
+
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
+                
+                // Show a loading state until auth resolves
+                registryTableBodyEl.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500 italic">Authenticating and connecting to database...</td></tr>`;
 
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         currentUserId = user.uid;
                         userIdEl.textContent = currentUserId.substring(0, 8);
                         isAuthReady = true;
+                        appContainerEl.classList.remove('hidden'); // Show UI now that auth is done
                         loadRecords(); // Start listening for data
-                        resetForm(); // Reset form and prepare for first use
+                        resetForm(); 
                     } else {
-                        // Sign in if not authenticated
+                        // Sign in if not authenticated (This is the critical path)
                         if (initialAuthToken) {
                             await signInWithCustomToken(auth, initialAuthToken);
                         } else {
-                            // Use anonymous sign-in as fallback
                             await signInAnonymously(auth);
                         }
                     }
                 });
 
             } catch (error) {
-                showStatus(`Firebase Init Error: ${error.message}`, true);
+                showStatus(`Firebase Init Error: ${error.message}. Check your console for details.`, true);
+                console.error("Firebase Initialization Failure:", error);
             }
         };
 
         const loadRecords = () => {
-            if (!isAuthReady) return;
+            if (!isAuthReady) {
+                registryTableBodyEl.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500 italic">Waiting for secure authentication...</td></tr>`;
+                return;
+            }
 
             const colRef = collection(db, getCollectionPath(currentUserId));
             const q = query(colRef);
@@ -133,7 +156,9 @@
                 renderTable(currentRecords);
                 recordCountEl.textContent = currentRecords.length;
             }, (error) => {
-                showStatus(`Real-time Listener Error: ${error.message}`, true);
+                showStatus(`Data Load Error: Permission Denied or Connection Failed. Check console for details.`, true);
+                console.error("Real-time Listener Error:", error);
+                registryTableBodyEl.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-red-500 italic">Failed to load records. Check connection and permissions.</td></tr>`;
             });
         };
 
@@ -186,10 +211,14 @@
 
             const name = nameInput.value.trim();
             const ssss = ssssInput.value.trim();
-            let cin = cinInput.value.trim().replace(/-/g, ''); // Remove hyphens for storage
+            // CRITICAL: Clean and validate CIN input
+            let cin = cinInput.value.trim().toUpperCase().replace(/-/g, ''); 
 
-            if (!name || !ssss) {
-                return showStatus("Owner Name and SSSS are mandatory.", true);
+            if (!name || !ssss || !cin) {
+                return showStatus("CIN, Owner Name, and SSSS are mandatory for all entries.", true);
+            }
+            if (cin.length !== 20 || !cin.startsWith('HIXM')) {
+                return showStatus("CIN must be 20 characters long and start with 'HIXM'. Please correct the entry.", true);
             }
 
             try {
@@ -197,19 +226,18 @@
                 
                 if (isEditing && editingDocId) {
                     // --- UPDATE LOGIC ---
+                    
                     const docRef = doc(db, colRef.path, editingDocId);
-                    await updateDoc(docRef, { name, ssss });
+                    // Save the cleaned CIN, Name, and SSSS
+                    await updateDoc(docRef, { name, ssss, cin }); 
                     showStatus(`Record for CIN ${formatCinDisplay(cin)} updated successfully.`);
                 } else {
                     // --- ADD LOGIC ---
-                    if (!cin) {
-                        // Generate a new CIN with prefix HIXM
-                        cin = 'HIXM' + generateRandomNum();
-                    }
-                    // Check if CIN already exists before adding (optional check)
+                    
+                    // Check for duplicates before adding
                     const existingRecord = currentRecords.find(r => r.cin === cin);
                     if (existingRecord) {
-                        return showStatus(`CIN ${formatCinDisplay(cin)} already exists. Use the Edit function.`, true);
+                        return showStatus(`CIN ${formatCinDisplay(cin)} already exists. Please use the Edit function to update the record.`, true);
                     }
                     
                     await addDoc(colRef, { cin, name, ssss, created: new Date() });
@@ -218,6 +246,7 @@
                 resetForm();
             } catch (error) {
                 showStatus(`Data Operation Failed: ${error.message}`, true);
+                console.error("Form Submit Error:", error);
             }
         };
         
@@ -229,7 +258,8 @@
             
             // Populate form
             cinInput.value = formatCinDisplay(cin);
-            cinInput.removeAttribute('disabled'); // Allow user to see the CIN they are editing
+            cinInput.removeAttribute('disabled'); 
+            cinInput.setAttribute('placeholder', 'Edit CIN here');
             nameInput.value = name;
             ssssInput.value = ssss;
             
@@ -262,6 +292,7 @@
                 resetForm();
             } catch (error) {
                 showStatus(`Deletion Failed: ${error.message}`, true);
+                console.error("Deletion Error:", error);
             }
         };
 
@@ -269,12 +300,15 @@
             e.preventDefault();
             if (!currentUserId) return showStatus("Authentication not ready. Please wait.", true);
             
-            const searchCin = lookupCinInput.value.trim().replace(/-/g, '');
+            // Clean CIN before searching
+            const searchCin = lookupCinInput.value.trim().toUpperCase().replace(/-/g, '');
+            lookupCinInput.value = formatCinDisplay(searchCin); // Display cleaned version
+
             if (searchCin.length === 0) {
                 return showStatus("Please enter a CIN for lookup.", true);
             }
             
-            // Find the record in the current snapshot (avoids extra Firestore read)
+            // Find the record in the current snapshot
             const record = currentRecords.find(r => r.cin === searchCin);
 
             if (record) {
@@ -284,7 +318,6 @@
                     <p class="text-lg font-mono text-red-700 mt-2">SSSS: ${record.ssss}</p>
                 `;
             } else {
-                 // Fallback to fetch from Firestore if necessary (though onSnapshot should have it)
                 lookupResultEl.innerHTML = `
                     <p class="text-lg font-bold text-red-600">Verification Failed:</p>
                     <p class="text-md text-red-500">CIN ${formatCinDisplay(searchCin)} not found in the registry.</p>
@@ -336,8 +369,8 @@
 </head>
 
 <body class="p-4 sm:p-8 min-h-screen bg-gray-50">
-    
-    <div class="max-w-6xl mx-auto">
+    <!-- Main Application Container (Hidden until Auth is Ready) -->
+    <div id="app-container" class="max-w-6xl mx-auto hidden">
         <header class="text-center mb-8">
             <h1 class="text-4xl sm:text-5xl mb-2" style="color: var(--color-primary);">
                 CPRA Internal Citizen Registry
@@ -348,7 +381,7 @@
         </header>
 
         <!-- Status Message Banner -->
-        <div id="status-message" class="p-3 rounded-lg text-center mb-6 font-bold text-sm opacity-0 transition-all duration-300 bg-green-100 text-green-700">
+        <div id="status-message" class="hidden p-3 rounded-lg text-center mb-6 font-bold text-sm">
             <!-- Dynamic status messages appear here -->
         </div>
         
@@ -363,19 +396,20 @@
                     </h2>
                     <form id="registry-form" class="space-y-4">
                         <label class="block font-bold text-sm text-gray-700">
-                            CIN (e.g., HIXM-XXXXXX-XXXXXX-XXXX)
-                            <input type="text" id="cin-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg font-mono bg-gray-100" placeholder="Automatically generated or displayed when editing" disabled>
-                            <p class="text-xs text-gray-500 mt-1">CIN is generated automatically unless editing an existing record.</p>
+                            CIN (e.g., HIXM-XXXXXX-XXXXXX-XXXX) <span class="text-red-600">*MANDATORY</span>
+                            <!-- CIN is now fully ENABLED and required -->
+                            <input type="text" id="cin-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg font-mono" placeholder="Enter the 20-digit HIXM CIN here" required>
+                            <p class="text-xs text-gray-500 mt-1">Please manually enter the CIN generated by the dedicated tool (must be 20 characters, starting with HIXM).</p>
                         </label>
                         
                         <label class="block font-bold text-sm text-gray-700">
-                            Owner Full Name
+                            Owner Full Name <span class="text-red-600">*MANDATORY</span>
                             <input type="text" id="name-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg" placeholder="Johnathan P. Smith" required>
                         </label>
                         
-                        <!-- SSSS INPUT FIELD (New Requirement) -->
+                        <!-- SSSS INPUT FIELD -->
                         <label class="block font-bold text-sm text-gray-700">
-                            SSSS (Secret Security Sequence/District Code)
+                            SSSS (Secret Security Sequence/District Code) <span class="text-red-600">*MANDATORY</span>
                             <input type="text" id="ssss-input" class="w-full p-3 border border-gray-300 rounded-lg text-lg font-mono" placeholder="e.g., District Alpha or 01A" required>
                             <p class="text-xs text-gray-500 mt-1">This field is mandatory for district assignment/security checks.</p>
                         </label>
@@ -433,7 +467,7 @@
                             <tbody id="registry-table-body" class="divide-y divide-gray-100">
                                 <!-- Data will be inserted here by JavaScript's renderTable function -->
                                 <tr>
-                                    <td colspan="4" class="px-3 py-6 text-center text-gray-400 italic">
+                                    <td colspan="4" class="px-3 py-6 text-center text-gray-500 italic">
                                         Loading records...
                                     </td>
                                 </tr>
@@ -449,7 +483,7 @@
     <div id="delete-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white p-8 rounded-xl shadow-2xl max-w-md w-full border-t-4 border-red-600">
             <h3 class="text-2xl font-bold text-red-700 mb-4">Confirm Deletion</h3>
-            <p id="modal-text" class="text-lg text-gray-700 mb-8">Are you sure you want to permanently delete this record? This action cannot be undone.</p>
+            <p id="modal-text" class="text-lg text-gray-700 mb-8">Are you sure you want to permanently delete the record for CIN ${formatCinDisplay('this record')}}? This action cannot be undone.</p>
             <div class="flex justify-end space-x-3">
                 <button id="modal-cancel-delete" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition duration-150">
                     Cancel
